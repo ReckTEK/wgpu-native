@@ -1,0 +1,79 @@
+name: ReckTEK upstream sync
+
+on:
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Push verified upstream merges and immutable version tags
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: recktek-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  fixtures:
+    if: >-
+      github.repository == 'ReckTEK/wgpu-native' && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' || vars.UPSTREAM_SYNC_ENABLED == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test fork policy without network or compilation
+        shell: pwsh
+        run: ./devops/Test-Sync.ps1
+
+  sync:
+    needs: fixtures
+    if: >-
+      github.repository == 'ReckTEK/wgpu-native' && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' || vars.UPSTREAM_SYNC_ENABLED == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # This identity can write only this fork. Public upstream fetches use HTTPS.
+      - uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.UPSTREAM_SYNC_KEY }}
+          log-public-key: false
+      - name: Trust GitHub's published SSH host key
+        shell: bash
+        run: cat devops/github_known_hosts >> ~/.ssh/known_hosts
+
+      - name: Prepare or apply this fork's update
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPLY_SYNC: ${{ github.event_name == 'schedule' || inputs.apply }}
+        run: |
+          ./devops/Sync-Upstream.ps1 `
+            -Output "$env:RUNNER_TEMP/upstream-sync.json" `
+            -Workspace "$env:RUNNER_TEMP/upstream-sync" `
+            -Apply:($env:APPLY_SYNC -eq 'true')
+
+      - name: Preserve sync report and Git diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: upstream-sync-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/upstream-sync.json
+            ${{ runner.temp }}/upstream-sync/upstream-sync-*/git.log
+          if-no-files-found: warn
+          retention-days: 30
