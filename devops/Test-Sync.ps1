@@ -72,6 +72,10 @@ function Run-Sync($Fixture, [switch] $Apply, [switch] $Failure, [switch] $NoRele
         schemaVersion = $Schema; repository = 'fixture/fork'; upstream = 'fixture/upstream'
         branch = 'main'; seedBranch = 'trunk'; upstreamBranch = 'trunk'; mirrorSourceRelease = !$NoRelease; holdUpstreamBuilds = $true
     } | ConvertTo-Json))
+    # GetNewClosure creates a module scope. Capture executable code and record
+    # assertions instead of resolving caller helper names from that module.
+    $runGit = ${function:Test-Git}
+    $callbackChecks = [Collections.Generic.List[object]]::new()
     $api = {
         param($Method, $Path, $Body)
         if ($Method -ceq 'GET' -and $Path -ceq '/repos/fixture/fork/actions/workflows?per_page=100&page=1') {
@@ -79,7 +83,7 @@ function Run-Sync($Fixture, [switch] $Apply, [switch] $Failure, [switch] $NoRele
         }
         if ($Method -ceq 'GET' -and $Path -ceq '/repos/fixture/upstream/releases?per_page=100&page=1') {
             if ($Fixture.Race) {
-                $null = Test-Git $Fixture.Fork @('update-ref', 'refs/heads/main', $Fixture.Race, $Fixture.Base)
+                $null = & $runGit $Fixture.Fork @('update-ref', 'refs/heads/main', $Fixture.Race, $Fixture.Base)
                 $Fixture.Race = $null
             }
             return ,@(@{ id = 123; tag_name = 'v1.2.3'; draft = $false; prerelease = $false; published_at = [DateTime]::UtcNow })
@@ -91,10 +95,10 @@ function Run-Sync($Fixture, [switch] $Apply, [switch] $Failure, [switch] $NoRele
         if ($Method -ceq 'POST' -and $Path -ceq '/repos/fixture/fork/releases') {
             $Fixture.Posts++
             if ($Fixture.FailPost) { throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('Denied', [Net.Http.HttpResponseMessage]::new([Net.HttpStatusCode]::Forbidden)) }
-            Test-Assert (!$Body.Contains('target_commitish')) 'Release creation must not select a moving branch'
-            Test-Assert (!$Body.Contains('assets')) 'Source notification does not claim built artifacts'
-            $tag = Test-Git $Fixture.Fork @('rev-parse', 'refs/tags/v1.2.3^{commit}')
-            Test-Assert ($tag -ceq $Fixture.Commit) 'The exact source tag exists before release creation'
+            $callbackChecks.Add(@{ Condition = !$Body.Contains('target_commitish'); Message = 'Release creation must not select a moving branch' })
+            $callbackChecks.Add(@{ Condition = !$Body.Contains('assets'); Message = 'Source notification does not claim built artifacts' })
+            $tag = & $runGit $Fixture.Fork @('rev-parse', 'refs/tags/v1.2.3^{commit}')
+            $callbackChecks.Add(@{ Condition = $tag -ceq $Fixture.Commit; Message = 'The exact source tag exists before release creation' })
             $Fixture.Release = @{ id = 456; tag_name = $Body.tag_name; draft = $false; prerelease = $false; body = $Body.body }
             return $Fixture.Release
         }
@@ -108,6 +112,7 @@ function Run-Sync($Fixture, [switch] $Apply, [switch] $Failure, [switch] $NoRele
         [IO.File]::WriteAllText("$output.error.txt", $_.ToString())
         if (!$Failure) { throw }
     }
+    foreach ($check in $callbackChecks) { Test-Assert $check.Condition $check.Message }
     Test-Assert ($failed -eq $Failure.IsPresent) 'Expected sync success/failure'
     return Get-Content -LiteralPath $output -Raw | ConvertFrom-Json -AsHashtable
 }
