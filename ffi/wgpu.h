@@ -1479,6 +1479,9 @@ typedef struct WGPUImageSubresourceRange {
  */
 typedef WGPUFlags WGPUShaderRuntimeChecks;
 
+/** Enable integer division checks in shaders. */
+static const WGPUShaderRuntimeChecks WGPUShaderRuntimeChecks_IntDivChecks = 0x0000000000000020;
+
 static const WGPUShaderRuntimeChecks WGPUShaderRuntimeChecks_None = 0x0000000000000000;
 /**
  * Enforce bounds checks in shaders, even if the underlying driver doesn’t support doing so natively.

@@ -5,6 +5,19 @@
 This is a native WebGPU implementation in Rust, based on [wgpu-core](https://github.com/gfx-rs/wgpu).
 The bindings are based on the WebGPU-native header found at `ffi/webgpu-headers/webgpu.h` and wgpu-native specific items in `ffi/wgpu.h`
 
+## ReckTEK integration
+
+This fork's `main` uses the exact wgpu 30 Git revision recorded in `Cargo.toml` and
+`Cargo.lock`. The C ABI retains the paired header submodule and uses wgpu's direct
+resource APIs. Build with the pinned Rust toolchain and `cargo build --locked`.
+The [wgpu-native-x](https://github.com/ReckTEK/wgpu-native-x) build supplies the
+matching generated .NET package and its native library.
+
+`wgpuGenerateReport` counts live native handle slots and reusable released slots
+per instance. Consumed command buffers release their slots on submission;
+`elementSize` is the size of a tracking slot. These counts do not measure GPU memory
+or resources retained internally after the corresponding C handle is released.
+
 # Bindings
 
 > [!NOTE]

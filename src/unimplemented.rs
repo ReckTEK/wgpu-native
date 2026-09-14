@@ -1,11 +1,6 @@
 use crate::native;
 
 #[no_mangle]
-pub extern "C" fn wgpuGetProcAddress(_proc_name: native::WGPUStringView) -> native::WGPUProc {
-    unimplemented!();
-}
-
-#[no_mangle]
 pub extern "C" fn wgpuBindGroupSetLabel(
     _bind_group: native::WGPUBindGroup,
     _label: native::WGPUStringView,
@@ -18,11 +13,6 @@ pub extern "C" fn wgpuBindGroupLayoutSetLabel(
     _bind_group_layout: native::WGPUBindGroupLayout,
     _label: native::WGPUStringView,
 ) {
-    unimplemented!();
-}
-
-#[no_mangle]
-pub extern "C" fn wgpuBufferGetMapState(_buffer: native::WGPUBuffer) -> native::WGPUBufferMapState {
     unimplemented!();
 }
 
@@ -82,36 +72,12 @@ pub extern "C" fn wgpuDeviceCreateRenderPipelineAsync(
 }
 
 #[no_mangle]
-pub extern "C" fn wgpuDeviceGetAdapterInfo(
-    _device: native::WGPUDevice,
-    _adapter_info: *mut native::WGPUAdapterInfo,
-) -> native::WGPUStatus {
-    unimplemented!();
-}
-
-#[no_mangle]
 pub extern "C" fn wgpuDeviceGetLostFuture(_device: native::WGPUDevice) -> native::WGPUFuture {
     unimplemented!();
 }
 
 #[no_mangle]
 pub extern "C" fn wgpuDeviceSetLabel(_device: native::WGPUDevice, _label: native::WGPUStringView) {
-    unimplemented!();
-}
-
-#[no_mangle]
-pub extern "C" fn wgpuInstanceGetWGSLLanguageFeatures(
-    _instance: native::WGPUInstance,
-    _features: *mut native::WGPUSupportedWGSLLanguageFeatures,
-) -> native::WGPUStatus {
-    unimplemented!();
-}
-
-#[no_mangle]
-pub extern "C" fn wgpuInstanceHasWGSLLanguageFeature(
-    _instance: native::WGPUInstance,
-    _feature: native::WGPUWGSLLanguageFeatureName,
-) -> bool {
     unimplemented!();
 }
 
@@ -188,13 +154,6 @@ pub extern "C" fn wgpuShaderModuleGetCompilationInfo(
 pub extern "C" fn wgpuShaderModuleSetLabel(
     _shader_module: native::WGPUShaderModule,
     _label: native::WGPUStringView,
-) {
-    unimplemented!();
-}
-
-#[no_mangle]
-pub extern "C" fn wgpuSupportedWGSLLanguageFeaturesFreeMembers(
-    _supported_wgsl_language_features: native::WGPUSupportedWGSLLanguageFeatures,
 ) {
     unimplemented!();
 }

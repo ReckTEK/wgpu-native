@@ -478,6 +478,9 @@ pub(crate) unsafe fn map_device_descriptor<'a>(
     (
         wgt::DeviceDescriptor {
             label: string_view_into_label(des.label),
+            default_queue: wgt::QueueDescriptor {
+                label: string_view_into_label(des.defaultQueue.label),
+            },
             required_features: map_features(make_slice(
                 des.requiredFeatures,
                 des.requiredFeatureCount,
@@ -527,7 +530,8 @@ pub unsafe fn map_pipeline_layout_descriptor<'a>(
                 layout
                     .as_ref()
                     .expect("invalid bind group layout for pipeline layout descriptor")
-                    .id,
+                    .inner
+                    .clone(),
             )
         })
         .collect::<Vec<_>>();
@@ -741,6 +745,13 @@ pub unsafe fn map_shader_module<'a>(
     wgsl: Option<&native::WGPUShaderSourceWGSL>,
     glsl: Option<&native::WGPUShaderSourceGLSL>,
 ) -> Result<wgc::pipeline::ShaderModuleSource<'a>, ShaderParseError> {
+    #[cfg(not(feature = "spirv"))]
+    let _ = spirv;
+    #[cfg(not(feature = "wgsl"))]
+    let _ = wgsl;
+    #[cfg(not(feature = "glsl"))]
+    let _ = glsl;
+
     #[cfg(feature = "wgsl")]
     if let Some(wgsl) = wgsl {
         let str_slice: &str = string_view_into_str(wgsl.code).unwrap_or("");
@@ -796,13 +807,14 @@ pub unsafe fn map_shader_module<'a>(
 #[inline]
 pub unsafe fn map_image_copy_texture(
     native: &native::WGPUTexelCopyTextureInfo,
-) -> wgc::command::TexelCopyTextureInfo {
+) -> wgt::TexelCopyTextureInfo<std::sync::Arc<wgc::resource::Texture>> {
     wgt::TexelCopyTextureInfo {
         texture: native
             .texture
             .as_ref()
             .expect("invalid texture for image copy texture")
-            .id,
+            .inner
+            .clone(),
         mip_level: native.mipLevel,
         origin: map_origin3d(&native.origin),
         aspect: map_texture_aspect(native.aspect).unwrap_or(wgt::TextureAspect::All),
@@ -812,13 +824,14 @@ pub unsafe fn map_image_copy_texture(
 #[inline]
 pub unsafe fn map_image_copy_buffer(
     native: &native::WGPUTexelCopyBufferInfo,
-) -> wgc::command::TexelCopyBufferInfo {
+) -> wgt::TexelCopyBufferInfo<std::sync::Arc<wgc::resource::Buffer>> {
     wgt::TexelCopyBufferInfo {
         buffer: native
             .buffer
             .as_ref()
             .expect("invalid buffer for image copy buffer")
-            .id,
+            .inner
+            .clone(),
         layout: map_texture_data_layout(&native.layout),
     }
 }
@@ -1152,48 +1165,6 @@ pub fn map_stencil_face_state(
             .unwrap_or(wgt::StencilOperation::Keep),
         pass_op: map_stencil_operation(value.passOp).unwrap_or(wgt::StencilOperation::Keep),
     }
-}
-
-#[inline]
-pub fn map_storage_report(report: &wgc::registry::RegistryReport) -> native::WGPURegistryReport {
-    native::WGPURegistryReport {
-        numAllocated: report.num_allocated,
-        numKeptFromUser: report.num_kept_from_user,
-        numReleasedFromUser: report.num_released_from_user,
-        elementSize: report.element_size,
-    }
-}
-
-#[inline]
-pub fn map_hub_report(report: &wgc::hub::HubReport) -> native::WGPUHubReport {
-    native::WGPUHubReport {
-        adapters: map_storage_report(&report.adapters),
-        devices: map_storage_report(&report.devices),
-        queues: map_storage_report(&report.queues),
-        pipelineLayouts: map_storage_report(&report.pipeline_layouts),
-        shaderModules: map_storage_report(&report.shader_modules),
-        bindGroupLayouts: map_storage_report(&report.bind_group_layouts),
-        bindGroups: map_storage_report(&report.bind_groups),
-        commandBuffers: map_storage_report(&report.command_buffers),
-        renderBundles: map_storage_report(&report.render_bundles),
-        renderPipelines: map_storage_report(&report.render_pipelines),
-        computePipelines: map_storage_report(&report.compute_pipelines),
-        pipelineCaches: map_storage_report(&report.pipeline_caches),
-        querySets: map_storage_report(&report.query_sets),
-        buffers: map_storage_report(&report.buffers),
-        textures: map_storage_report(&report.textures),
-        textureViews: map_storage_report(&report.texture_views),
-        samplers: map_storage_report(&report.samplers),
-    }
-}
-
-#[inline]
-pub fn write_global_report(
-    native_report: &mut native::WGPUGlobalReport,
-    report: &wgc::global::GlobalReport,
-) {
-    native_report.surfaces = map_storage_report(&report.surfaces);
-    native_report.hub = map_hub_report(&report.hub);
 }
 
 #[inline]
@@ -1581,7 +1552,7 @@ pub fn map_bind_group_entry<'a>(
             binding: entry.binding,
             resource: wgc::binding_model::BindingResource::Buffer(
                 wgc::binding_model::BufferBinding {
-                    buffer: buffer.id,
+                    buffer: buffer.inner.clone(),
                     offset: entry.offset,
                     size: match entry.size {
                         0 => panic!("buffer supplied to bind group must have size greater than 0"),
@@ -1594,12 +1565,12 @@ pub fn map_bind_group_entry<'a>(
     } else if let Some(sampler) = unsafe { entry.sampler.as_ref() } {
         return wgc::binding_model::BindGroupEntry {
             binding: entry.binding,
-            resource: wgc::binding_model::BindingResource::Sampler(sampler.id),
+            resource: wgc::binding_model::BindingResource::Sampler(sampler.inner.clone()),
         };
     } else if let Some(texture_view) = unsafe { entry.textureView.as_ref() } {
         return wgc::binding_model::BindGroupEntry {
             binding: entry.binding,
-            resource: wgc::binding_model::BindingResource::TextureView(texture_view.id),
+            resource: wgc::binding_model::BindingResource::TextureView(texture_view.inner.clone()),
         };
     } else if let Some(extras) = extras {
         if let Some(texture_views) = unsafe { extras.textureViews.as_ref() } {
@@ -1608,7 +1579,8 @@ pub fn map_bind_group_entry<'a>(
                 .map(|v| {
                     unsafe { v.as_ref() }
                         .expect("invalid texture views for bind group entry extras")
-                        .id
+                        .inner
+                        .clone()
                 })
                 .collect();
             return wgc::binding_model::BindGroupEntry {
@@ -1621,7 +1593,8 @@ pub fn map_bind_group_entry<'a>(
                 .map(|v| {
                     unsafe { v.as_ref() }
                         .expect("invalid sampler for bind group entry extras")
-                        .id
+                        .inner
+                        .clone()
                 })
                 .collect();
             return wgc::binding_model::BindGroupEntry {
@@ -1634,7 +1607,8 @@ pub fn map_bind_group_entry<'a>(
                 .map(|v| wgc::binding_model::BufferBinding {
                     buffer: unsafe { v.as_ref() }
                         .expect("invalid buffers for bind group entry extras")
-                        .id,
+                        .inner
+                        .clone(),
                     offset: entry.offset,
                     size: if entry.size == 0 {
                         None
@@ -1863,7 +1837,7 @@ pub enum CreateSurfaceParams {
             raw_window_handle::RawWindowHandle,
         ),
     ),
-    #[cfg(all(any(target_os = "ios", target_os = "macos"), feature = "metal"))]
+    #[cfg(all(target_vendor = "apple", feature = "metal"))]
     Metal(*mut std::ffi::c_void),
     #[cfg(all(target_os = "windows", feature = "dx12"))]
     SwapChainPanel(*mut std::ffi::c_void),
@@ -1928,7 +1902,7 @@ pub unsafe fn map_surface(
         ));
     }
 
-    #[cfg(all(any(target_os = "ios", target_os = "macos"), feature = "metal"))]
+    #[cfg(all(target_vendor = "apple", feature = "metal"))]
     if let Some(metal) = _metal {
         return CreateSurfaceParams::Metal(metal.layer);
     }
@@ -1969,6 +1943,7 @@ pub fn map_surface_configuration(
     extras: Option<&native::WGPUSurfaceConfigurationExtras>,
 ) -> wgt::SurfaceConfiguration<Vec<wgt::TextureFormat>> {
     wgt::SurfaceConfiguration {
+        color_space: Default::default(),
         usage: map_texture_usage_flags(config.usage as native::WGPUTextureUsage),
         format: map_texture_format(config.format)
             .expect("invalid format for surface configuration"),
@@ -2055,6 +2030,7 @@ pub fn map_shader_runtime_checks(
     value: native::WGPUShaderRuntimeChecks,
 ) -> wgt::ShaderRuntimeChecks {
     wgt::ShaderRuntimeChecks {
+        int_div_checks: (value & native::WGPUShaderRuntimeChecks_IntDivChecks) != 0,
         bounds_checks: (value & native::WGPUShaderRuntimeChecks_BoundsChecks) != 0,
         force_loop_bounding: (value & native::WGPUShaderRuntimeChecks_ForceLoopBounding) != 0,
         ray_query_initialization_tracking: (value
@@ -2085,4 +2061,38 @@ pub fn from_u64_bits<T: bitflags::Flags<Bits = u32>>(value: u64) -> Option<T> {
     }
 
     T::from_bits(value as u32)
+}
+
+/// C buffer flags contain the standard WebGPU usages in their low word.
+pub fn map_buffer_usage(value: u64) -> Option<wgt::BufferUsages> {
+    let bits = u32::try_from(value).ok()?;
+    wgt::BufferUsagesWebGPU::from_bits(bits).map(Into::into)
+}
+
+#[cfg(test)]
+mod v30_tests {
+    use super::*;
+
+    #[test]
+    fn buffer_usage_preserves_standard_bits_and_rejects_native_or_unknown_bits() {
+        let flags = native::WGPUBufferUsage_MapRead | native::WGPUBufferUsage_CopyDst;
+        assert_eq!(
+            map_buffer_usage(flags),
+            Some(wgt::BufferUsages::MAP_READ | wgt::BufferUsages::COPY_DST)
+        );
+        assert!(map_buffer_usage(1 << 32).is_none());
+        assert!(map_buffer_usage(1 << 31).is_none());
+    }
+
+    #[test]
+    fn integer_division_shader_checks_are_selected_independently() {
+        let division = map_shader_runtime_checks(native::WGPUShaderRuntimeChecks_IntDivChecks);
+        assert!(division.int_div_checks);
+        assert!(!division.bounds_checks);
+        let bounds = map_shader_runtime_checks(native::WGPUShaderRuntimeChecks_BoundsChecks);
+        assert!(bounds.bounds_checks);
+        assert!(!bounds.int_div_checks);
+        let trusted = map_shader_runtime_checks(native::WGPUShaderRuntimeChecks_None);
+        assert!(!trusted.int_div_checks);
+    }
 }
